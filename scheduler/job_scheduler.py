@@ -16,6 +16,7 @@ from datetime import datetime, timezone
 
 import numpy as np
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
+from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 
 from config import (
@@ -29,12 +30,6 @@ from config import (
 )
 
 logger = logging.getLogger(__name__)
-
-# 일별 수집 완료 추적 플래그
-_daily_collection_done = {
-    "sentiment": False,
-    "onchain": False,
-}
 
 
 async def collect_technical() -> None:
@@ -175,9 +170,7 @@ async def collect_sentiment() -> None:
     try:
         collector = SentimentCollector()
         await collector.collect_with_retry()
-        _daily_collection_done["sentiment"] = True
         logger.info("[scheduler] 심리 데이터 수집 완료")
-        await _check_and_trigger_retraining()
     except Exception:
         logger.exception("[scheduler] 심리 데이터 수집 실패")
 
@@ -203,24 +196,9 @@ async def collect_onchain() -> None:
     try:
         collector = OnchainCollector()
         await collector.collect_with_retry()
-        _daily_collection_done["onchain"] = True
         logger.info("[scheduler] 온체인 데이터 수집 완료")
-        await _check_and_trigger_retraining()
     except Exception:
         logger.exception("[scheduler] 온체인 데이터 수집 실패")
-
-
-async def _check_and_trigger_retraining() -> None:
-    """모든 일별 수집이 완료되면 재학습을 트리거한다."""
-    if all(_daily_collection_done.values()):
-        logger.info("[scheduler] 모든 일별 수집 완료 — 재학습 트리거")
-        # 플래그 리셋
-        for key in _daily_collection_done:
-            _daily_collection_done[key] = False
-        try:
-            await _run_retraining()
-        except Exception:
-            logger.exception("[scheduler] 재학습 실패")
 
 
 def _build_model_instance(model_name: str):
@@ -498,9 +476,20 @@ def create_scheduler() -> AsyncIOScheduler:
         next_run_time=now,  # 즉시 실행
     )
 
+    # 재학습: 매일 UTC 21:00 (한국시간 오전 6:00) + 서버 시작 시 즉시 1회
+    scheduler.add_job(
+        _run_retraining,
+        trigger=CronTrigger(hour=21, minute=0, timezone="UTC"),
+        id="daily_retraining",
+        name="일별 재학습 (KST 06:00)",
+        replace_existing=True,
+        next_run_time=now,  # 서버 시작 시 즉시 1회 실행
+    )
+
     logger.info(
         "[scheduler] 스케줄러 생성 완료 — "
-        "기술지표/페어: %ds, 심리: %ds, 온체인: %ds, ETF: %ds",
+        "기술지표/페어: %ds, 심리: %ds, 온체인: %ds, ETF: %ds, "
+        "재학습: 매일 KST 06:00",
         SCHEDULE_INTERVAL_TECHNICAL,
         SCHEDULE_INTERVAL_PAIR,
         SCHEDULE_INTERVAL_SENTIMENT,
