@@ -254,7 +254,22 @@ def _evaluate_model(model, X_test: np.ndarray, y_test: np.ndarray):
 
 
 async def _run_retraining() -> None:
-    """모델 재학습 실행 — 타임프레임별로 별도 모델을 학습하고 예측한다.
+    """재학습을 별도 스레드에서 실행하여 API 응답을 블로킹하지 않는다."""
+    import asyncio
+    loop = asyncio.get_event_loop()
+    await loop.run_in_executor(None, _run_retraining_sync)
+
+    # 재학습 완료 후 AI 분석 자동 생성
+    try:
+        from ai.analyzer import generate_and_save_analysis
+        await generate_and_save_analysis()
+        logger.info("[scheduler] AI 분석 리포트 자동 생성 완료")
+    except Exception:
+        logger.exception("[scheduler] AI 분석 리포트 생성 실패")
+
+
+def _run_retraining_sync() -> None:
+    """모델 재학습 실행 (동기) — 타임프레임별로 별도 모델을 학습하고 예측한다.
 
     각 타임프레임(short/mid/long)마다:
     1. FeatureEngineering으로 해당 타임프레임 타겟의 데이터셋 구성
@@ -397,14 +412,6 @@ async def _run_retraining() -> None:
 
         session.commit()
         logger.info("[scheduler] 모델 재학습 및 예측 완료")
-
-        # 재학습 완료 후 AI 분석 자동 생성
-        try:
-            from ai.analyzer import generate_and_save_analysis
-            await generate_and_save_analysis()
-            logger.info("[scheduler] AI 분석 리포트 자동 생성 완료")
-        except Exception:
-            logger.exception("[scheduler] AI 분석 리포트 생성 실패")
 
     except Exception as e:
         logger.exception("[scheduler] 재학습 파이프라인 전체 오류: %s", e)
