@@ -15,7 +15,7 @@ from zoneinfo import ZoneInfo
 import httpx
 
 from collectors.base_collector import BaseCollector
-from config import BINANCE_BASE_URL, TIMEZONE
+from config import BINANCE_BASE_URL, BINANCE_US_BASE_URL, TIMEZONE
 from db.database import get_session
 from db.models import DailyPriceData, PriceData
 
@@ -47,22 +47,13 @@ class PriceCollector(BaseCollector):
         d_limit = 1000 if not self._initial_collect_done else 7
 
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # 시간봉 수집
-            h_resp = await client.get(
-                f"{self._base_url}/api/v3/klines",
-                params={"symbol": "XRPUSDT", "interval": "1h", "limit": h_limit},
-            )
-            h_resp.raise_for_status()
-
+            # 시간봉 수집 (글로벌 → US 폴백)
+            h_resp = await self._fetch_klines(client, "XRPUSDT", "1h", h_limit)
             # 일봉 수집
-            d_resp = await client.get(
-                f"{self._base_url}/api/v3/klines",
-                params={"symbol": "XRPUSDT", "interval": "1d", "limit": d_limit},
-            )
-            d_resp.raise_for_status()
+            d_resp = await self._fetch_klines(client, "XRPUSDT", "1d", d_limit)
 
-        h_records = _parse_klines(h_resp.json())
-        d_records = _parse_klines(d_resp.json())
+        h_records = _parse_klines(h_resp)
+        d_records = _parse_klines(d_resp)
 
         if h_records:
             _save_records(h_records, PriceData)
@@ -80,6 +71,26 @@ class PriceCollector(BaseCollector):
             "hourly_count": len(h_records),
             "daily_count": len(d_records),
         }
+
+    async def _fetch_klines(
+        self, client: httpx.AsyncClient, symbol: str, interval: str, limit: int,
+    ) -> list:
+        """바이낸스 글로벌 → US 폴백으로 klines를 가져온다."""
+        for base_url in [self._base_url, BINANCE_US_BASE_URL]:
+            try:
+                resp = await client.get(
+                    f"{base_url}/api/v3/klines",
+                    params={"symbol": symbol, "interval": interval, "limit": limit},
+                )
+                resp.raise_for_status()
+                logger.info("[price] %s에서 %s %s %d건 수집", base_url, symbol, interval, limit)
+                return resp.json()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 451:
+                    logger.warning("[price] %s 451 차단, US 폴백 시도", base_url)
+                    continue
+                raise
+        raise RuntimeError(f"바이낸스 글로벌/US 모두 {symbol} 수집 실패")
 
 
 # ── 내부 헬퍼 함수 ───────────────────────────────────────────

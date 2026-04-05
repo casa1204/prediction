@@ -19,7 +19,7 @@ import pandas as pd
 import yfinance as yf
 
 from collectors.base_collector import BaseCollector
-from config import BINANCE_BASE_URL, CRYPTO_PAIRS, INDICES, TIMEZONE
+from config import BINANCE_BASE_URL, BINANCE_US_BASE_URL, CRYPTO_PAIRS, INDICES, TIMEZONE
 from db.database import get_session
 from db.models import PairData
 
@@ -104,10 +104,10 @@ class PairCollector(BaseCollector):
 
         첫 수집: 1000개 일봉 (약 2.7년치 백필)
         이후: 24개 시간봉 (1일치)
+        글로벌 API 451 차단 시 US API로 폴백.
         """
         records: list[dict] = []
 
-        # 첫 수집은 일봉 1000개, 이후는 시간봉 24개
         if not self._initial_collect_done:
             interval = "1d"
             limit = 1000
@@ -123,16 +123,7 @@ class PairCollector(BaseCollector):
                     continue
 
                 try:
-                    resp = await client.get(
-                        f"{self._base_url}/api/v3/klines",
-                        params={
-                            "symbol": symbol,
-                            "interval": interval,
-                            "limit": limit,
-                        },
-                    )
-                    resp.raise_for_status()
-                    klines = resp.json()
+                    klines = await self._fetch_klines(client, symbol, interval, limit)
 
                     for entry in klines:
                         if not isinstance(entry, list) or len(entry) < 5:
@@ -153,6 +144,25 @@ class PairCollector(BaseCollector):
                     raise
 
         return records
+
+    async def _fetch_klines(
+        self, client: httpx.AsyncClient, symbol: str, interval: str, limit: int,
+    ) -> list:
+        """바이낸스 글로벌 → US 폴백으로 klines를 가져온다."""
+        for base_url in [self._base_url, BINANCE_US_BASE_URL]:
+            try:
+                resp = await client.get(
+                    f"{base_url}/api/v3/klines",
+                    params={"symbol": symbol, "interval": interval, "limit": limit},
+                )
+                resp.raise_for_status()
+                return resp.json()
+            except httpx.HTTPStatusError as e:
+                if e.response.status_code == 451:
+                    logger.warning("[pair] %s 451 차단, US 폴백 시도", base_url)
+                    continue
+                raise
+        raise RuntimeError(f"바이낸스 글로벌/US 모두 {symbol} 수집 실패")
 
     def _collect_indices(self) -> list[dict]:
         """Yahoo Finance에서 전통 금융 지수 일별 종가를 수집한다.

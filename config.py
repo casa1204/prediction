@@ -20,6 +20,7 @@ TIMEZONE = "America/New_York"
 
 # ── 바이낸스 API (키 불필요, 무료) ────────────────────────────
 BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
+BINANCE_US_BASE_URL = os.getenv("BINANCE_US_BASE_URL", "https://api.binance.us")
 
 CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY", "")  # 무료 키 (cryptocompare.com에서 발급)
 LUNARCRUSH_API_KEY = os.getenv("LUNARCRUSH_API_KEY", "")  # LunarCrush API 키
