@@ -22,9 +22,9 @@ TIMEZONE = "America/New_York"
 BINANCE_BASE_URL = os.getenv("BINANCE_BASE_URL", "https://api.binance.com")
 BINANCE_US_BASE_URL = os.getenv("BINANCE_US_BASE_URL", "https://api.binance.us")
 
-CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY", "")  # 무료 키 (cryptocompare.com에서 발급)
-LUNARCRUSH_API_KEY = os.getenv("LUNARCRUSH_API_KEY", "")  # LunarCrush API 키
-GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "")  # Google Gemini API 키
+CRYPTOCOMPARE_API_KEY = os.getenv("CRYPTOCOMPARE_API_KEY", "").strip('"').strip("'")
+LUNARCRUSH_API_KEY = os.getenv("LUNARCRUSH_API_KEY", "").strip('"').strip("'")
+GEMINI_API_KEY = os.getenv("GEMINI_API_KEY", "").strip('"').strip("'")
 
 # Bithomp 제거 — XRPL 공식 JSON-RPC API 사용 (키 불필요)
 XRPL_RPC_URL = os.getenv("XRPL_RPC_URL", "https://s1.ripple.com:51234/")
