@@ -595,6 +595,18 @@ async def get_ai_analysis() -> dict:
     return {"analysis": analysis, "timestamp": None, "model_used": "gemini-2.5-flash"}
 
 
+@router.get("/api/debug/env")
+async def debug_env() -> dict:
+    """환경변수 디버그 (키 길이만 표시)."""
+    import os
+    return {
+        "GEMINI_API_KEY_len": len(os.getenv("GEMINI_API_KEY", "")),
+        "LUNARCRUSH_API_KEY_len": len(os.getenv("LUNARCRUSH_API_KEY", "")),
+        "CRYPTOCOMPARE_API_KEY_len": len(os.getenv("CRYPTOCOMPARE_API_KEY", "")),
+        "env_keys": [k for k in os.environ.keys() if "API" in k or "KEY" in k],
+    }
+
+
 @router.get("/api/ai-analysis/history")
 async def get_ai_analysis_history() -> list[dict]:
     """AI 분석 리포트 이력 (최근 30건)."""
