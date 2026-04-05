@@ -476,14 +476,16 @@ def create_scheduler() -> AsyncIOScheduler:
         next_run_time=now,  # 즉시 실행
     )
 
-    # 재학습: 매일 UTC 21:00 (한국시간 오전 6:00) + 서버 시작 시 즉시 1회
+    # 재학습: 매일 UTC 21:00 (한국시간 오전 6:00) + 서버 시작 5분 후 1회
+    from datetime import timedelta
+    first_retraining = now + timedelta(minutes=5)
     scheduler.add_job(
         _run_retraining,
         trigger=CronTrigger(hour=21, minute=0, timezone="UTC"),
         id="daily_retraining",
         name="일별 재학습 (KST 06:00)",
         replace_existing=True,
-        next_run_time=now,  # 서버 시작 시 즉시 1회 실행
+        next_run_time=first_retraining,  # 서버 시작 5분 후 (수집 완료 대기)
     )
 
     logger.info(
