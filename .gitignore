@@ -1,0 +1,11 @@
+.env
+.venv/
+db/xrp_data.db
+models/champion/
+models/challenger/
+__pycache__/
+*.pyc
+node_modules/
+frontend/dist/
+.hypothesis/
+.pytest_cache/

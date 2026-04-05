@@ -1,0 +1,278 @@
+# 구현 계획: XRP 가격 예측 대시보드
+
+## 개요
+
+설계 문서에 정의된 아키텍처에 따라, 백엔드(Python/FastAPI)와 프론트엔드(React/JSX)를 단계적으로 구현한다. 데이터 저장 → 수집 → 분석 → 예측 → 모니터링 → API → 프론트엔드 순서로 진행하며, 각 단계에서 테스트를 병행한다.
+
+## Tasks
+
+- [x] 1. 프로젝트 구조 및 기본 설정
+  - [x] 1.1 프로젝트 디렉토리 구조 생성 및 설정 파일 작성
+    - `requirements.txt`, `config.py`, `main.py` 생성
+    - 디렉토리 구조: `db/`, `collectors/`, `analysis/`, `prediction/`, `monitoring/`, `scheduler/`, `api/`, `models/champion/`, `models/challenger/`, `tests/`
+    - `config.py`에 API 키 플레이스홀더, DB 경로, 스케줄 주기 등 전역 설정 정의
+    - _Requirements: 7.1, 7.5_
+  - [x] 1.2 SQLAlchemy 데이터베이스 설정 및 ORM 모델 정의
+    - `db/database.py`: SQLite 엔진, 세션 팩토리, `Base.metadata.create_all` 설정
+    - `db/models.py`: `PriceData`, `TechnicalIndicator`, `ElliottWaveData`, `WyckoffData`, `PairData`, `SentimentData`, `OnchainData`, `PredictionRecord`, `HitRateRecord`, `EnsembleWeight`, `RetrainingHistory`, `CollectionLog` ORM 모델 정의
+    - _Requirements: 1.4, 1.16, 4.5, 7.4_
+  - [x]* 1.3 데이터 저장 라운드트립 속성 테스트 작성
+    - **Property 3: 데이터 저장 라운드트립**
+    - **Validates: Requirements 1.4, 1.16, 4.5**
+  - [x]* 1.4 수집 로그 필수 필드 속성 테스트 작성
+    - **Property 20: 수집 로그 필수 필드**
+    - **Validates: Requirements 7.4**
+
+- [x] 2. 데이터 수집기 구현
+  - [x] 2.1 BaseCollector 기본 클래스 구현
+    - `collectors/base_collector.py`: 추상 `collect` 메서드, `collect_with_retry` (최대 3회 재시도, 지수 백오프), `log_collection` 메서드 구현
+    - 연속 실패 카운터 관리 및 3회 도달 시 알림 로직
+    - _Requirements: 2.4, 3.4, 4.4, 7.3, 7.4_
+  - [x]* 2.2 수집기 재시도 및 폴백 속성 테스트 작성
+    - **Property 10: 수집기 재시도 및 폴백**
+    - **Validates: Requirements 2.4, 3.4, 4.4**
+  - [x]* 2.3 연속 실패 알림 정확성 속성 테스트 작성
+    - **Property 19: 연속 실패 알림 정확성**
+    - **Validates: Requirements 7.3**
+  - [x] 2.4 PriceCollector 구현
+    - `collectors/price_collector.py`: Binance/CoinGecko API에서 XRP OHLCV 데이터 수집
+    - httpx 비동기 클라이언트 사용, 수집 데이터를 `PriceData` 테이블에 저장
+    - _Requirements: 1.1, 1.2_
+  - [x] 2.5 PairCollector 구현
+    - `collectors/pair_collector.py`: XRP/BTC, XRP/ETH, XRP/USD, BTC/USD, ETH/USD (1시간 간격), S&P500, NASDAQ (미국 동부시간 기준 일별 종가) 수집
+    - Yahoo Finance API 활용, 모든 타임스탬프를 미국 동부시간(America/New_York)으로 통일, `PairData` 테이블에 저장
+    - _Requirements: 2.1, 2.2, 2.3_
+  - [x] 2.6 SentimentCollector 구현
+    - `collectors/sentiment_collector.py`: Google Trends (pytrends), Twitter/X (tweepy), 공포탐욕지수 API 수집
+    - 수집 데이터를 `SentimentData` 테이블에 저장
+    - _Requirements: 3.1, 3.2, 3.3_
+  - [x] 2.7 OnchainCollector 구현
+    - `collectors/onchain_collector.py`: XRPL/Bithomp API에서 활성 지갑, 신규 지갑, 거래 건수, 총 거래량, 고래 거래(100만 XRP 이상) 수집
+    - `OnchainData` 테이블에 저장
+    - _Requirements: 4.1, 4.2, 4.3_
+  - [x]* 2.8 고래 거래 필터링 정확성 속성 테스트 작성
+    - **Property 13: 고래 거래 필터링 정확성**
+    - **Validates: Requirements 4.3**
+
+- [x] 3. 체크포인트 - 데이터 수집 계층 검증
+  - 모든 테스트가 통과하는지 확인하고, 질문이 있으면 사용자에게 문의한다.
+
+- [x] 4. 기술 분석 모듈 구현
+  - [x] 4.1 TechnicalIndicatorModule 구현
+    - `analysis/technical_indicators.py`: `ta` 라이브러리를 활용하여 RSI(14), MACD(12,26,9), BB(20), SMA(5,10,20,50,200), EMA(12,26) 계산
+    - `interpolate_missing`: 결측값 보간 처리 및 로그 기록
+    - `calculate_all`: 모든 지표 계산 후 `TechnicalIndicator` 테이블에 저장
+    - _Requirements: 1.1, 1.3, 1.4_
+  - [x]* 4.2 기술 지표 범위 유효성 속성 테스트 작성
+    - **Property 1: 기술 지표 범위 유효성**
+    - **Validates: Requirements 1.1**
+  - [x]* 4.3 결측값 보간 완전성 속성 테스트 작성
+    - **Property 2: 결측값 보간 완전성**
+    - **Validates: Requirements 1.3**
+  - [x] 4.4 ElliottWaveModule 구현
+    - `analysis/elliott_wave.py`: `detect_waves` (Impulse/Corrective 패턴 감지, 최소 200캔들), `validate_wave_rules` (3가지 규칙 검증), `calculate_fibonacci_targets` (0.236~0.786), `get_current_position` (현재 파동 위치/다음 방향)
+    - 감지 결과를 `ElliottWaveData` 테이블에 저장
+    - _Requirements: 1.5, 1.6, 1.7, 1.8, 1.9_
+  - [x]* 4.5 엘리엇 파동 필수 필드 완전성 속성 테스트 작성
+    - **Property 4: 엘리엇 파동 필수 필드 완전성**
+    - **Validates: Requirements 1.6**
+  - [x]* 4.6 엘리엇 파동 위치 유효성 속성 테스트 작성
+    - **Property 5: 엘리엇 파동 위치 유효성**
+    - **Validates: Requirements 1.7**
+  - [x]* 4.7 피보나치 목표가 수학적 정확성 속성 테스트 작성
+    - **Property 6: 피보나치 목표가 수학적 정확성**
+    - **Validates: Requirements 1.8**
+  - [x]* 4.8 엘리엇 파동 규칙 검증 정확성 속성 테스트 작성
+    - **Property 7: 엘리엇 파동 규칙 검증 정확성**
+    - **Validates: Requirements 1.9**
+  - [x] 4.9 WyckoffModule 구현
+    - `analysis/wyckoff.py`: `detect_accumulation` (PS,SC,AR,ST,Spring,SOS,LPS), `detect_distribution` (PSY,BC,AR,ST,UTAD,LPSY,SOW), `determine_market_phase` (4단계 + 신뢰도 0~100), `determine_wyckoff_phase` (A~E), `analyze_volume` (가격-거래량 확산/수렴)
+    - Spring/Upthrust 이벤트 시 `is_trend_reversal=True` 설정
+    - 결과를 `WyckoffData` 테이블에 저장
+    - _Requirements: 1.10, 1.11, 1.12, 1.13, 1.14, 1.15, 1.16_
+  - [x]* 4.10 와이코프 분석 결과 유효성 속성 테스트 작성
+    - **Property 8: 와이코프 분석 결과 유효성**
+    - **Validates: Requirements 1.12, 1.13**
+  - [x]* 4.11 Spring/Upthrust 이벤트 필수 필드 속성 테스트 작성
+    - **Property 9: Spring/Upthrust 이벤트 필수 필드**
+    - **Validates: Requirements 1.15**
+
+- [x] 5. 체크포인트 - 기술 분석 모듈 검증
+  - 모든 테스트가 통과하는지 확인하고, 질문이 있으면 사용자에게 문의한다.
+
+- [x] 6. 상관 자산 및 심리 데이터 분석 모듈 구현
+  - [x] 6.1 PairDataModule 상관계수 계산 구현
+    - `collectors/pair_collector.py`에 `PairDataModule.calculate_correlation` 추가
+    - XRP와 각 자산 간 일별 상관계수 계산, `PairData.correlation_with_xrp` 필드에 저장
+    - _Requirements: 2.5_
+  - [x]* 6.2 상관계수 범위 유효성 속성 테스트 작성
+    - **Property 11: 상관계수 범위 유효성**
+    - **Validates: Requirements 2.5**
+  - [x] 6.3 SentimentModule 정규화 구현
+    - `collectors/sentiment_collector.py`에 `SentimentModule.normalize` 추가
+    - 모든 심리 데이터를 0~100 범위로 정규화
+    - _Requirements: 3.5_
+  - [x]* 6.4 심리 데이터 정규화 범위 속성 테스트 작성
+    - **Property 12: 심리 데이터 정규화 범위**
+    - **Validates: Requirements 3.5**
+
+- [x] 7. 예측 엔진 구현
+  - [x] 7.1 FeatureEngineering 모듈 구현
+    - `prediction/feature_engineering.py`: 기술 지표, 엘리엇 파동, 와이코프, 페어, 심리, 온체인 데이터를 통합하여 학습 데이터셋 구성
+    - 누락 피처 처리 (0 또는 마지막 유효값 대체), 90일 미만 데이터 경고 로직
+    - _Requirements: 5.1, 5.9_
+  - [x] 7.2 BaseModel 인터페이스 및 LSTM 모델 구현
+    - `prediction/base_model.py`: `PredictionResult` 데이터클래스, `BaseModel` 추상 클래스 (train, predict, save, load, get_feature_importance)
+    - `prediction/lstm_model.py`: PyTorch 기반 LSTM 모델 구현
+    - _Requirements: 5.2, 5.3, 5.4, 5.10_
+  - [x] 7.3 XGBoost 모델 구현
+    - `prediction/xgboost_model.py`: XGBoost 기반 모델 구현
+    - _Requirements: 5.2, 5.3, 5.4_
+  - [x] 7.4 Random Forest 모델 구현
+    - `prediction/random_forest_model.py`: scikit-learn 기반 Random Forest 모델 구현
+    - _Requirements: 5.2, 5.3, 5.4_
+  - [x] 7.5 Transformer 모델 구현
+    - `prediction/transformer_model.py`: PyTorch 기반 Transformer 모델 구현
+    - _Requirements: 5.2, 5.3, 5.4_
+  - [x]* 7.6 예측 결과 유효성 속성 테스트 작성
+    - **Property 14: 예측 결과 유효성**
+    - **Validates: Requirements 5.3, 5.4**
+  - [x]* 7.7 피처 기여도 유효성 속성 테스트 작성
+    - **Property 18: 피처 기여도 유효성**
+    - **Validates: Requirements 5.10**
+  - [x] 7.8 EnsembleEngine 구현
+    - `prediction/ensemble.py`: `predict` (가중 평균 통합), `weighted_vote` (가중 투표), `update_weights` (정확도 기반 동적 조정)
+    - 개별 모델 실패 시 해당 모델 제외 후 나머지로 통합
+    - 예측 결과를 `PredictionRecord` 테이블에 저장
+    - _Requirements: 5.5, 5.6, 5.7, 5.8, 5.11_
+  - [x]* 7.9 앙상블 가중 평균 수학적 정확성 속성 테스트 작성
+    - **Property 15: 앙상블 가중 평균 수학적 정확성**
+    - **Validates: Requirements 5.5**
+  - [x]* 7.10 앙상블 가중 투표 정확성 속성 테스트 작성
+    - **Property 16: 앙상블 가중 투표 정확성**
+    - **Validates: Requirements 5.6**
+  - [x]* 7.11 앙상블 가중치 동적 조정 속성 테스트 작성
+    - **Property 17: 앙상블 가중치 동적 조정**
+    - **Validates: Requirements 5.7**
+  - [x]* 7.12 저성능 모델 가중치 하향 조정 속성 테스트 작성
+    - **Property 25: 저성능 모델 가중치 하향 조정**
+    - **Validates: Requirements 8.3**
+
+- [x] 8. 체크포인트 - 예측 엔진 검증
+  - 모든 테스트가 통과하는지 확인하고, 질문이 있으면 사용자에게 문의한다.
+
+- [x] 9. 성능 모니터링 모듈 구현
+  - [x] 9.1 HitRateTracker 구현
+    - `monitoring/hit_rate_tracker.py`: `calculate_direction_hit_rate`, `calculate_range_hit_rate` (허용 오차: 단기 ±3%, 중기 ±5%, 장기 ±10%), `check_underperformance` (30일 연속 10%p 이상 저하 감지)
+    - 적중률을 `HitRateRecord` 테이블에 일별 시계열로 저장
+    - _Requirements: 8.1, 8.5, 8.6, 8.7, 8.8, 8.9, 8.10, 8.11_
+  - [x]* 9.2 MAE/MAPE 수학적 정확성 속성 테스트 작성
+    - **Property 24: MAE/MAPE 수학적 정확성**
+    - **Validates: Requirements 8.1**
+  - [x]* 9.3 Direction Hit Rate 계산 정확성 속성 테스트 작성
+    - **Property 26: Direction Hit Rate 계산 정확성**
+    - **Validates: Requirements 8.6**
+  - [x]* 9.4 Range Hit Rate 계산 정확성 속성 테스트 작성
+    - **Property 27: Range Hit Rate 계산 정확성**
+    - **Validates: Requirements 8.7**
+  - [x]* 9.5 적중률 시계열 저장 라운드트립 속성 테스트 작성
+    - **Property 28: 적중률 시계열 저장 라운드트립**
+    - **Validates: Requirements 8.10**
+  - [x]* 9.6 장기 저성능 모델 경고 정확성 속성 테스트 작성
+    - **Property 29: 장기 저성능 모델 경고 정확성**
+    - **Validates: Requirements 8.11**
+  - [x] 9.7 RetrainingScheduler 구현
+    - `monitoring/retraining_scheduler.py`: `retrain` (Incremental/Full), `compare_models` (Champion vs Challenger 성능 비교), `swap_if_better` (교체 로직)
+    - 재학습 이력을 `RetrainingHistory` 테이블에 저장
+    - 오류 발생 시 Champion 유지, 오류 로그 기록
+    - _Requirements: 7.5, 7.6, 7.7, 7.8, 7.9, 7.10, 7.11, 7.12_
+  - [x]* 9.8 Champion/Challenger 교체 정확성 속성 테스트 작성
+    - **Property 21: Champion/Challenger 교체 정확성**
+    - **Validates: Requirements 7.8, 7.9, 7.10**
+  - [x]* 9.9 재학습 이력 필수 필드 속성 테스트 작성
+    - **Property 22: 재학습 이력 필수 필드**
+    - **Validates: Requirements 7.11**
+  - [x]* 9.10 재학습 오류 시 모델 보존 속성 테스트 작성
+    - **Property 23: 재학습 오류 시 모델 보존**
+    - **Validates: Requirements 7.12**
+
+- [x] 10. 체크포인트 - 모니터링 모듈 검증
+  - 모든 테스트가 통과하는지 확인하고, 질문이 있으면 사용자에게 문의한다.
+
+- [x] 11. 스케줄러 및 API 구현
+  - [x] 11.1 APScheduler 기반 작업 스케줄러 구현
+    - `scheduler/job_scheduler.py`: 데이터 수집 스케줄 (기술 지표/페어: 1시간, 심리/온체인: 1일), 재학습 트리거 (일별 수집 완료 후 자동 시작)
+    - FastAPI lifespan 이벤트에서 스케줄러 시작/종료
+    - _Requirements: 7.1, 7.2, 7.5_
+  - [x] 11.2 FastAPI 라우트 구현
+    - `api/routes.py`: `/api/current-price`, `/api/predictions/{timeframe}`, `/api/technical-indicators`, `/api/elliott-wave`, `/api/wyckoff`, `/api/correlations`, `/api/sentiment`, `/api/onchain`, `/api/hit-rates`, `/api/feature-importance/{model_name}`, `/api/retraining-history`, `/api/model-weights` 엔드포인트 구현
+    - `main.py`: FastAPI 앱 설정, CORS 미들웨어 (`http://localhost:5173`), 라우터 등록
+    - _Requirements: 6.1, 6.2, 6.3, 6.4, 6.5, 6.7, 6.9, 6.10, 6.11, 6.12, 6.13, 6.14, 6.15, 6.17, 6.20_
+  - [x]* 11.3 API 엔드포인트 단위 테스트 작성
+    - FastAPI TestClient를 사용한 각 엔드포인트 응답 형식 및 상태 코드 검증
+    - _Requirements: 6.16_
+
+- [x] 12. 프론트엔드 프로젝트 설정
+  - [x] 12.1 React + Vite 프로젝트 초기화 및 설정
+    - `frontend/` 디렉토리: `package.json`, `vite.config.js` (백엔드 프록시 `/api` → `http://localhost:8000`), `tailwind.config.js`, `postcss.config.js`, `index.html`
+    - `src/main.jsx`: React 앱 진입점, React Query Provider 설정
+    - `src/App.jsx`: React Router 설정 (Dashboard, Analysis, Performance 페이지)
+    - _Requirements: 6.1_
+  - [x] 12.2 API 클라이언트 및 React Query 훅 구현
+    - `src/api/client.js`: Axios 인스턴스 (baseURL, 타임아웃 10초, 인터셉터)
+    - `src/hooks/useQueries.js`: `useCurrentPrice`, `usePredictions`, `useTechnicalIndicators`, `useElliottWave`, `useWyckoff`, `useCorrelations`, `useSentiment`, `useOnchain`, `useHitRates`, `useFeatureImportance`, `useRetrainingHistory`, `useModelWeights` 커스텀 훅
+    - _Requirements: 6.16_
+
+- [x] 13. 프론트엔드 대시보드 컴포넌트 구현
+  - [x] 13.1 공통 레이아웃 및 메인 대시보드 페이지 구현
+    - `src/components/Layout.jsx`: 사이드바 (페이지 네비게이션), 헤더 (현재 가격 요약)
+    - `src/pages/Dashboard.jsx`: PriceOverview, CandlestickChart, PredictionPanel, SentimentGauge 배치
+    - _Requirements: 6.1, 6.2_
+  - [x] 13.2 PriceOverview 및 CandlestickChart 컴포넌트 구현
+    - `src/components/PriceOverview.jsx`: 현재 가격, 24h 변동률, 거래량 표시
+    - `src/components/CandlestickChart.jsx`: TradingView Lightweight Charts 기반 캔들스틱 차트
+    - _Requirements: 6.1, 6.3_
+  - [x] 13.3 PredictionPanel 컴포넌트 구현
+    - `src/components/PredictionPanel.jsx`: 개별 모델(LSTM, XGBoost, RF, Transformer) 예측 결과 + 앙상블 통합 결과 표시, 타임프레임 선택 UI
+    - _Requirements: 6.2, 6.12, 6.13, 6.14, 6.16_
+  - [x] 13.4 기술 분석 상세 페이지 컴포넌트 구현
+    - `src/components/TechnicalIndicators.jsx`: RSI, MACD, BB, SMA/EMA 오버레이
+    - `src/components/ElliottWavePanel.jsx`: 파동 카운트, 피보나치 되돌림, 현재 위치/다음 방향
+    - `src/components/WyckoffPanel.jsx`: 이벤트 마커, 시장 단계, Phase, 신뢰도, 거래량 분석
+    - `src/pages/Analysis.jsx`: 기술 분석 컴포넌트 배치
+    - _Requirements: 6.3, 6.4, 6.5, 6.6, 6.7, 6.8_
+  - [x] 13.5 상관 자산, 심리, 온체인 차트 컴포넌트 구현
+    - `src/components/CorrelationChart.jsx`: 상관계수 시각화 (Recharts)
+    - `src/components/SentimentGauge.jsx`: 공포탐욕지수, 검색 트렌드, SNS 감성 게이지
+    - `src/components/OnchainChart.jsx`: 활성 지갑, 거래량, 고래 거래 차트
+    - _Requirements: 6.9, 6.10, 6.11_
+  - [x] 13.6 성능 모니터링 페이지 컴포넌트 구현
+    - `src/components/HitRateChart.jsx`: 적중률 시계열 차트, 모델 간 비교 막대 차트
+    - `src/components/FeatureImportance.jsx`: 피처 기여도 막대 차트
+    - `src/components/RetrainingHistory.jsx`: 재학습 이력 테이블
+    - `src/pages/Performance.jsx`: 성능 모니터링 컴포넌트 배치
+    - _Requirements: 6.15, 6.17, 6.18, 6.19, 6.20_
+
+- [x] 14. 체크포인트 - 프론트엔드 통합 검증
+  - 모든 테스트가 통과하는지 확인하고, 질문이 있으면 사용자에게 문의한다.
+
+- [x] 15. 전체 통합 및 최종 검증
+  - [x] 15.1 스케줄러-수집기-분석-예측-모니터링 파이프라인 연결
+    - `main.py`에서 스케줄러 시작, 수집 → 분석 → 예측 → 적중률 계산 → 재학습 전체 흐름 연결
+    - 에러 핸들링 통합: 수집 실패 시 재시도, 모델 실패 시 제외, 재학습 오류 시 Champion 유지
+    - _Requirements: 7.1, 7.2, 7.3, 7.12_
+  - [x]* 15.2 통합 테스트 작성
+    - API 엔드포인트 → DB 조회 → JSON 응답 형식 검증
+    - 수집 → 저장 → 조회 흐름 검증
+    - _Requirements: 6.16, 8.4_
+
+- [x] 16. 최종 체크포인트 - 전체 시스템 검증
+  - 모든 테스트가 통과하는지 확인하고, 질문이 있으면 사용자에게 문의한다.
+
+## Notes
+
+- `*` 표시된 태스크는 선택 사항이며, 빠른 MVP를 위해 건너뛸 수 있습니다
+- 각 태스크는 특정 요구사항을 참조하여 추적 가능합니다
+- 체크포인트에서 점진적 검증을 수행합니다
+- 속성 테스트는 보편적 정확성 속성을 검증하고, 단위 테스트는 특정 예제와 엣지 케이스를 검증합니다
+- 백엔드 서버(`uvicorn main:app --reload`)와 프론트엔드 개발 서버(`cd frontend && npm run dev`)는 별도 터미널에서 수동 실행이 필요합니다
