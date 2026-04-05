@@ -110,10 +110,8 @@ def _gather_context() -> str:
 
 async def generate_analysis() -> str:
     """Gemini Pro를 사용하여 XRP 시장 분석 리포트를 생성한다."""
-    api_key = GEMINI_API_KEY or os.getenv("GEMINI_API_KEY", "")
-    logger.info("[ai] GEMINI_API_KEY from config: '%s', from env: '%s'",
-                GEMINI_API_KEY[:5] + "..." if GEMINI_API_KEY else "EMPTY",
-                (os.getenv("GEMINI_API_KEY", "")[:5] + "...") if os.getenv("GEMINI_API_KEY") else "EMPTY")
+    api_key = os.getenv("GEMINI_API_KEY", "").strip('"').strip("'")
+    logger.info("[ai] GEMINI_API_KEY length: %d", len(api_key))
     if not api_key:
         return "Gemini API 키가 설정되지 않았습니다. 환경변수 `GEMINI_API_KEY`를 확인하세요."
 
