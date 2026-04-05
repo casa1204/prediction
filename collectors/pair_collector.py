@@ -148,7 +148,7 @@ class PairCollector(BaseCollector):
     async def _fetch_klines(
         self, client: httpx.AsyncClient, symbol: str, interval: str, limit: int,
     ) -> list:
-        """바이낸스 글로벌 → US 폴백으로 klines를 가져온다."""
+        """바이낸스 글로벌 → US 폴백으로 klines를 가져온다. 둘 다 실패하면 빈 리스트."""
         for base_url in [self._base_url, BINANCE_US_BASE_URL]:
             try:
                 resp = await client.get(
@@ -158,11 +158,16 @@ class PairCollector(BaseCollector):
                 resp.raise_for_status()
                 return resp.json()
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 451:
+                code = e.response.status_code
+                if code == 451:
                     logger.warning("[pair] %s 451 차단, US 폴백 시도", base_url)
                     continue
+                if code == 400:
+                    logger.warning("[pair] %s에서 %s 페어 없음 (400), 건너뜀", base_url, symbol)
+                    return []
                 raise
-        raise RuntimeError(f"바이낸스 글로벌/US 모두 {symbol} 수집 실패")
+        logger.warning("[pair] 글로벌/US 모두 %s 수집 실패, 건너뜀", symbol)
+        return []
 
     def _collect_indices(self) -> list[dict]:
         """Yahoo Finance에서 전통 금융 지수 일별 종가를 수집한다.

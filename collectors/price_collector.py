@@ -86,11 +86,16 @@ class PriceCollector(BaseCollector):
                 logger.info("[price] %s에서 %s %s %d건 수집", base_url, symbol, interval, limit)
                 return resp.json()
             except httpx.HTTPStatusError as e:
-                if e.response.status_code == 451:
+                code = e.response.status_code
+                if code == 451:
                     logger.warning("[price] %s 451 차단, US 폴백 시도", base_url)
                     continue
+                if code == 400:
+                    logger.warning("[price] %s에서 %s 없음 (400), 건너뜀", base_url, symbol)
+                    return []
                 raise
-        raise RuntimeError(f"바이낸스 글로벌/US 모두 {symbol} 수집 실패")
+        logger.warning("[price] 글로벌/US 모두 %s 수집 실패", symbol)
+        return []
 
 
 # ── 내부 헬퍼 함수 ───────────────────────────────────────────
